@@ -1,0 +1,45 @@
+@import "_cores.scss";
+@import "_reset.scss";
+@import "_fonts.scss";
+@import "_header.scss";
+@import "_boxs.scss";
+@import "_style.scss";
+
+header{
+	p{
+		display: none;
+	}
+}
+
+.login{
+	float: left;
+	width: 100%;
+	margin-top: 44px;
+	#login{
+		border-radius: 5px;
+		width: 300px;
+		margin-left: calc(50% - 150px);
+		h1{
+			text-align: center;
+		}
+		input{
+			width: calc(100% - 10px);
+			height: 33px;
+			padding-left: 10px;
+			text-align: center;
+			margin-bottom: 15px;
+		}
+		button{
+			width: 100%;
+			height: 33px;
+			background-color: $primary-color;
+			border:0;
+			border-radius: 5px;
+			border:0px;
+			color:#fff;
+			cursor: pointer;
+		}
+	}
+}
+
+@import "_footer.scss";

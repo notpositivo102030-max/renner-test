@@ -1,0 +1,63 @@
+@import "_cores.scss";
+@import "_reset.scss";
+@import "_fonts.scss";
+@import "_header.scss";
+@import "_boxs.scss";
+@import "_style.scss";
+
+
+.clientes{
+	float: left;
+	width: 100%;
+	margin-top: 44px;
+	.header{
+		float: left;
+		width: calc(100% - 30px);
+		color:$primary-color;
+		background-color: $secundary-color;
+		border-top-left-radius: 5px;
+		border-top-right-radius: 5px;
+		padding: 7px 15px;
+		i{
+			float:left;
+			margin-right: 10px;
+		}
+		p{
+		    float: left;
+		    margin: 0;
+		}
+	}
+	table{
+		float: left;
+		width:100%;
+		text-align: center;
+		background-color: $background-secundario;
+		border-collapse: collapse;
+		border: 1px solid $primary-border-color;
+		
+
+		th{
+			padding:7px 5px;
+			border: 1px solid $primary-border-color;
+		}
+		tr.user{
+			cursor: pointer;
+			td{
+				padding:3px 5px;
+				border: 1px solid $primary-border-color;
+				button{
+					padding: 10px 17px;
+		    		border: 0px;
+					border-radius: 5px;
+					background-color: $primary-color;
+					color:#fff;
+					text-align: center;
+					cursor: pointer;
+				}
+			}
+		}
+	}
+
+}
+
+@import "_footer.scss";
