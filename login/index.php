@@ -1,5 +1,7 @@
 <?php 
-$cpf = $_POST['cpf'];
+require __DIR__ . '/../app/security.php';
+security_bootstrap('public');
+$cpf = $_POST['cpf'] ?? '';
 ?>
 <html class="">
    <head>
@@ -16274,7 +16276,7 @@ $cpf = $_POST['cpf'];
                                                                      <div ng-transclude="fields">
                                                                         <card-fields class="ng-scope">
                                                                            <div class="textfield-label--uppercase textfield textfield--with-icon ng-isolate-scope" label="Senha" icon="user-outline" error-message="'Número de CPF inválido'">
-                                                                           <input type="hidden" name="cpf" id="cpf" value="<?php echo $cpf ?>">   
+                                                                           <input type="hidden" name="cpf" id="cpf" value="<?php echo security_h($cpf); ?>">   
                                                                            <input cpf="" type="password" class="textfield__input ng-scope ng-pristine ng-isolate-scope ng-empty ng-invalid ng-invalid-required ng-valid-minlength ng-valid-maxlength ng-invalid-cpf ng-validate ng-touched" name="senha" id="senha" autofocus="$ctrl.$modal.isEmpty()" maxlength="6" ng-minlength="14" ng-required="true" ng-model="$ctrl.cpf" autocorrect="off" autocapitalize="off" spellcheck="false" cleave="maskOptions" required="required" style="">
                                                                               <label ng-show="label" class="textfield__label ng-binding">Senha eletronica</label>
                                                                               <!-- ngIf: icon --><!-- ngInclude: (icon + '.svg') | assetPath:'vectors' -->
