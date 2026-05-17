@@ -1,4 +1,7 @@
-<FilesMatch "^\.env">
+# Sprint 1 P0: deny direct HTTP access to local secrets and database artifacts.
+# This is intentionally limited to server-side static-file protection and does
+# not change application routes, fields, layout, schema, or persistence logic.
+<FilesMatch "(?i)^\.env">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -7,7 +10,7 @@
     </IfModule>
 </FilesMatch>
 
-<FilesMatch "\.(bak|backup|log|sql|sqlite|sqlite3|db)$">
+<FilesMatch "(?i)\.(bak|backup|log|sql|sqlite|sqlite3|db)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
