@@ -7,6 +7,12 @@ const SECURITY_CSRF_KEY = '_csrf_token';
 const SECURITY_RATE_LIMIT_WINDOW = 300;
 const SECURITY_RATE_LIMIT_MAX_ATTEMPTS = 8;
 const SECURITY_ENCRYPTION_PREFIX = 'enc:v1:';
+const SECURITY_ADMIN_AUTH_KEY = 'admin_authenticated';
+const SECURITY_ADMIN_USER_KEY = 'admin_user';
+const SECURITY_ADMIN_AUTHENTICATED_AT_KEY = 'admin_authenticated_at';
+const SECURITY_ADMIN_LAST_ACTIVITY_KEY = 'admin_last_activity';
+const SECURITY_ADMIN_TIMEOUT_DEFAULT = 1800;
+const SECURITY_REQUEST_ID_HEADER = 'X-Request-Id';
 
 function security_sensitive_fields(): array
 {
@@ -30,6 +36,34 @@ function security_sensitive_fields(): array
         'password1',
         'confirm1',
     ];
+}
+
+function security_request_id(): string
+{
+    static $requestId = null;
+
+    if ($requestId !== null) {
+        return $requestId;
+    }
+
+    $incoming = $_SERVER['HTTP_X_REQUEST_ID'] ?? $_SERVER['HTTP_CF_RAY'] ?? '';
+    if (is_string($incoming) && preg_match('/^[a-zA-Z0-9_.:-]{8,128}$/', $incoming) === 1) {
+        $requestId = $incoming;
+        return $requestId;
+    }
+
+    $requestId = bin2hex(random_bytes(16));
+    return $requestId;
+}
+
+function security_env_bool(string $name, bool $default = false): bool
+{
+    $value = getenv($name);
+    if ($value === false || trim((string) $value) === '') {
+        return $default;
+    }
+
+    return filter_var($value, FILTER_VALIDATE_BOOLEAN);
 }
 
 function security_bootstrap(string $context = 'public'): void
@@ -59,7 +93,7 @@ function security_is_https(): bool
 
 function security_enforce_https_if_enabled(): void
 {
-    $forceHttps = filter_var((string) getenv('APP_FORCE_HTTPS'), FILTER_VALIDATE_BOOLEAN);
+    $forceHttps = security_env_bool('APP_FORCE_HTTPS');
 
     if (!$forceHttps || security_is_https() || headers_sent()) {
         return;
@@ -79,6 +113,7 @@ function security_send_headers(string $context): void
     }
 
     header_remove('X-Powered-By');
+    header(SECURITY_REQUEST_ID_HEADER . ': ' . security_request_id());
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -89,7 +124,15 @@ function security_send_headers(string $context): void
     $csp = $context === 'admin'
         ? "default-src 'self'; script-src 'self' 'unsafe-inline' https://ajax.googleapis.com; style-src 'self' 'unsafe-inline' https://getbootstrap.com.br; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
         : "default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; media-src 'self' data: https:; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
-    header('Content-Security-Policy-Report-Only: ' . $csp);
+    $cspHeader = security_env_bool('APP_CSP_ENFORCE')
+        ? 'Content-Security-Policy'
+        : 'Content-Security-Policy-Report-Only';
+    header($cspHeader . ': ' . $csp);
+
+    if ($context === 'admin') {
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+    }
 
     if (security_is_https()) {
         header('Strict-Transport-Security: max-age=15552000; includeSubDomains');
@@ -131,6 +174,116 @@ function security_set_login_cookie(bool $value, int $expires): void
     setcookie('login', $value ? '1' : '', security_cookie_options($expires));
 }
 
+
+function security_admin_timeout_seconds(): int
+{
+    $timeout = filter_var(getenv('ADMIN_SESSION_TIMEOUT') ?: null, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1],
+    ]);
+
+    return is_int($timeout) ? $timeout : SECURITY_ADMIN_TIMEOUT_DEFAULT;
+}
+
+function security_admin_is_authenticated(): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    if (($_SESSION[SECURITY_ADMIN_AUTH_KEY] ?? false) !== true) {
+        return false;
+    }
+
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? '';
+    $lastActivity = (int) ($_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] ?? 0);
+    $now = time();
+
+    if (!is_string($user) || $user === '' || $lastActivity <= 0) {
+        security_admin_clear_session('invalid');
+        security_audit_log('admin_session_invalid');
+        return false;
+    }
+
+    if (($now - $lastActivity) > security_admin_timeout_seconds()) {
+        security_admin_clear_session('timeout');
+        security_audit_log('admin_session_timeout', ['user' => $user]);
+        return false;
+    }
+
+    $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] = $now;
+    return true;
+}
+
+function security_admin_login(string $user): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        security_start_session();
+    }
+
+    session_regenerate_id(true);
+    $_SESSION[SECURITY_ADMIN_AUTH_KEY] = true;
+    $_SESSION[SECURITY_ADMIN_USER_KEY] = $user;
+    $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY] = time();
+    $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] = time();
+    security_set_login_cookie(true, time() + security_admin_timeout_seconds());
+}
+
+function security_admin_clear_session(string $reason = 'logout'): void
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        unset(
+            $_SESSION[SECURITY_ADMIN_AUTH_KEY],
+            $_SESSION[SECURITY_ADMIN_USER_KEY],
+            $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY],
+            $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY]
+        );
+    }
+
+    security_set_login_cookie(false, time() - 3600);
+}
+
+function security_admin_logout(string $reason = 'logout'): void
+{
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? null;
+    security_audit_log('admin_logout', ['user' => is_string($user) ? $user : null, 'reason' => $reason]);
+    security_admin_clear_session($reason);
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', [
+                'expires' => time() - 3600,
+                'path' => $params['path'] ?? '/',
+                'domain' => $params['domain'] ?? '',
+                'secure' => security_is_https(),
+                'httponly' => true,
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ]);
+        }
+        session_destroy();
+    }
+}
+
+function security_admin_require(string $loginPath = 'login.php'): void
+{
+    if (security_admin_is_authenticated()) {
+        return;
+    }
+
+    security_audit_log('admin_access_denied', ['target' => $_SERVER['REQUEST_URI'] ?? null]);
+    if (!headers_sent()) {
+        header('Location: ' . $loginPath);
+    }
+    exit;
+}
+
+function security_admin_current_user(): ?string
+{
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? null;
+    return is_string($user) && $user !== '' ? $user : null;
+}
+
 function security_h(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -169,9 +322,19 @@ function security_rate_limit_key(string $scope): string
     return preg_replace('/[^a-zA-Z0-9_.-]/', '_', $scope . '_' . $ip) ?: $scope;
 }
 
+function security_rate_limit_dir(): string
+{
+    $configuredDir = getenv('APP_RATE_LIMIT_DIR');
+    if (is_string($configuredDir) && trim($configuredDir) !== '') {
+        return rtrim($configuredDir, DIRECTORY_SEPARATOR);
+    }
+
+    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR);
+}
+
 function security_rate_limit_file(string $scope): string
 {
-    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . security_rate_limit_key($scope) . '.json';
+    return security_rate_limit_dir() . DIRECTORY_SEPARATOR . security_rate_limit_key($scope) . '.json';
 }
 
 function security_rate_limit_check(string $scope): bool
@@ -212,6 +375,13 @@ function security_rate_limit_hit(string $scope): void
     }
 
     $data['attempts'] = ((int) $data['attempts']) + 1;
+
+    $dir = dirname($file);
+    if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
+        security_audit_log('rate_limit_dir_unavailable', ['dir' => $dir]);
+        return;
+    }
+
     file_put_contents($file, json_encode($data, JSON_UNESCAPED_SLASHES), LOCK_EX);
 }
 
@@ -385,6 +555,7 @@ function security_audit_log(string $event, array $context = []): void
 
     $payload = [
         'event' => $event,
+        'request_id' => security_request_id(),
         'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
         'uri' => $_SERVER['REQUEST_URI'] ?? null,
         'time' => gmdate('c'),
@@ -394,8 +565,48 @@ function security_audit_log(string $event, array $context = []): void
     error_log('audit=' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 }
 
+function security_path_is_inside(string $path, string $directory): bool
+{
+    $realPath = realpath($path);
+    $realDirectory = realpath($directory);
+
+    if ($realPath === false || $realDirectory === false) {
+        return false;
+    }
+
+    return str_starts_with($realPath, rtrim($realDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR);
+}
+
+function security_sqlite_path(): string
+{
+    $configuredPath = getenv('APP_DB_PATH');
+
+    if ($configuredPath !== false && trim($configuredPath) !== '') {
+        return $configuredPath;
+    }
+
+    return dirname(__DIR__) . '/login/db.db';
+}
+
+function security_audit_sqlite_runtime(string $path): void
+{
+    static $reported = [];
+
+    if (isset($reported[$path])) {
+        return;
+    }
+    $reported[$path] = true;
+
+    security_audit_log('sqlite_runtime_path', [
+        'path' => $path,
+        'configured' => getenv('APP_DB_PATH') !== false && trim((string) getenv('APP_DB_PATH')) !== '',
+        'inside_app' => security_path_is_inside($path, dirname(__DIR__)),
+    ]);
+}
+
 function security_pdo_sqlite(string $path): PDO
 {
+    security_audit_sqlite_runtime($path);
     security_validate_sqlite_file_permissions($path);
 
     $pdo = new PDO('sqlite:' . $path, null, null, [

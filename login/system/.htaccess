@@ -1,0 +1,8 @@
+# Enterprise hardening: PHPMailer and other legacy libraries are server-side only.
+# Keep PHP filesystem includes available while denying direct HTTP access.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Deny from all
+</IfModule>

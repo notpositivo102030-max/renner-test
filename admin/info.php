@@ -1,7 +1,16 @@
 <?php
 require __DIR__ . '/../app/security.php';
 security_bootstrap('admin');
-require '../config/conexao.php';
+security_admin_require('login.php');
+
+$legacyConnection = __DIR__ . '/../config/conexao.php';
+if (!is_file($legacyConnection)) {
+	security_audit_log('admin_info_legacy_dependency_missing', ['user' => security_admin_current_user()]);
+	header('Location: index.php');
+	exit;
+}
+
+require $legacyConnection;
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($id === false || $id === null) {
 	http_response_code(400);
@@ -12,10 +21,7 @@ mysqli_stmt_bind_param($stmt, 'i', $id);
 mysqli_stmt_execute($stmt);
 $sql = mysqli_stmt_get_result($stmt);
 $aux = mysqli_fetch_assoc($sql);
-if (!isset($_COOKIE['login'])) {
-	header("location:login.php");
-}
-security_audit_log('admin_info_access', ['id' => $id]);
+security_audit_log('admin_info_access', ['id' => $id, 'user' => security_admin_current_user()]);
 
 ?>
 <!DOCTYPE html>
