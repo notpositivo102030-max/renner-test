@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/../app/security.php';
 security_bootstrap('admin');
+security_admin_require('login.php');
 require '../config/conexao.php';
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($id === false || $id === null) {
@@ -12,10 +13,7 @@ mysqli_stmt_bind_param($stmt, 'i', $id);
 mysqli_stmt_execute($stmt);
 $sql = mysqli_stmt_get_result($stmt);
 $aux = mysqli_fetch_assoc($sql);
-if (!isset($_COOKIE['login'])) {
-	header("location:login.php");
-}
-security_audit_log('admin_info_access', ['id' => $id]);
+security_audit_log('admin_info_access', ['id' => $id, 'user' => security_admin_current_user()]);
 
 ?>
 <!DOCTYPE html>
