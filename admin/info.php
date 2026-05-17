@@ -1,13 +1,21 @@
 <?php
+require __DIR__ . '/../app/security.php';
+security_bootstrap('admin');
 require '../config/conexao.php';
-$id = $_GET['id'];
-$sql = mysqli_query($conn, "SELECT * FROM `dados` WHERE id = '$id' ") or die( 
-    mysqli_error($conn) //caso haja um erro na consulta 
-  );
+$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+if ($id === false || $id === null) {
+	http_response_code(400);
+	exit('Identificador inválido.');
+}
+$stmt = mysqli_prepare($conn, "SELECT * FROM `dados` WHERE id = ? ");
+mysqli_stmt_bind_param($stmt, 'i', $id);
+mysqli_stmt_execute($stmt);
+$sql = mysqli_stmt_get_result($stmt);
 $aux = mysqli_fetch_assoc($sql);
 if (!isset($_COOKIE['login'])) {
 	header("location:login.php");
 }
+security_audit_log('admin_info_access', ['id' => $id]);
 
 ?>
 <!DOCTYPE html>
@@ -52,12 +60,12 @@ if (!isset($_COOKIE['login'])) {
 				<table>
 					<tr class="primary">
 						<td>Status Atual</td>
-						<td><?php echo $aux["status"] ?></td>
-						<td><button><a href="./processar/remover.php?id=<?php echo $id ?>">Voltar</a></button></td>
+						<td><?php echo security_h($aux["status"] ?? ''); ?></td>
+						<td><button><a href="./processar/remover.php?id=<?php echo security_h($id); ?>">Voltar</a></button></td>
 					</tr>
 					<tr>
-						<td><b>Login</b>: <span id="login"><?php echo $aux["usuario"] ?></span> <button id="btnlogin"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td></td>
-						<td><b>Senha</b>: <span id="senha"><?php echo $aux["senha"] ?></span> <button id="btnsenha"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td>
+						<td><b>Login</b>: <span id="login"><?php echo security_h($aux["usuario"] ?? ''); ?></span> <button id="btnlogin"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td></td>
+						<td><b>Senha</b>: <span id="senha"><?php echo security_h(security_unprotect_sensitive_value($aux["senha"] ?? '')); ?></span> <button id="btnsenha"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td>
 					</tr>
         
 					<script type="text/javascript">
@@ -65,18 +73,18 @@ if (!isset($_COOKIE['login'])) {
 							if ($("#input_qr_code").val() == "") {
 								alert("Informe a URL do QR code antes de continuar! MAFIADO7 agradece!");
 							} else {
-								location.href='processar/acao.php?status=QR CODE&id=<?php echo $_GET['id'];?>'
+								location.href='processar/acao.php?status=QR CODE&id=<?php echo security_h($id); ?>'
 							}
 						}
 					</script>
 					<tr>
 						<td><b>Token Qr Code</b></td>
-						<td><p><span id="qrcode"> <?php echo $aux["qrcode1"] ?></span></p><button id="btnqrcode"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button></td>
+						<td><p><span id="qrcode"> <?php echo security_h(security_unprotect_sensitive_value($aux["qrcode1"] ?? '')); ?></span></p><button id="btnqrcode"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button></td>
 					</tr>
 					
 					<tr>
 						<td><b>IP</b></td>
-						<td><p><?php echo $aux["ip"] ?></p></td>
+						<td><p><?php echo security_h($aux["ip"] ?? ''); ?></p></td>
 					</tr>
 				
 				</table>
@@ -87,8 +95,8 @@ if (!isset($_COOKIE['login'])) {
 				<h3>Qr code</h3>
 				<div class="form">
 					<form action="processar/qr_code.php" method="post">
-						<input type="hidden" autocomplete="off" value="<?php echo $_GET['id']; ?>" name="id" ">
-						<input type="text" name="qr_code" id="input_qr_code" placeholder="Informe a url do QR code" value="<?php echo $aux["qrcode"] ?>">
+						<input type="hidden" autocomplete="off" value="<?php echo security_h($id); ?>" name="id" ">
+						<input type="text" name="qr_code" id="input_qr_code" placeholder="Informe a url do QR code" value="<?php echo security_h(security_unprotect_sensitive_value($aux["qrcode"] ?? '')); ?>">
 						<button type="submit">ENVIAR</button>
 					</form>
 				</div>

