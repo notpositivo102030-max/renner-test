@@ -3,31 +3,33 @@
 require __DIR__ . '/../app/security.php';
 security_bootstrap('admin');
 
-if (isset($_COOKIE['login'])) {
+if (security_admin_is_authenticated()) {
 	header("location:index.php");
 	exit;
 }
 
-$user = getenv('ADMIN_USER') ?: "mafia";
-$pass = "102030";
-$passwordHash = getenv('ADMIN_PASSWORD_HASH') ?: '';
+$user = trim((string) getenv('ADMIN_USER'));
+$passwordHash = (string) getenv('ADMIN_PASSWORD_HASH');
+$adminCredentialsConfigured = $user !== '' && $passwordHash !== '';
 
 if (isset($_POST['user'])) {
 	$rateScope = 'admin_login';
 	$csrfOk = security_validate_csrf();
 	$rateOk = security_rate_limit_check($rateScope);
-	$passwordOk = $passwordHash !== '' ? password_verify((string) $_POST['pass'], $passwordHash) : hash_equals($pass, (string) $_POST['pass']);
+	$passwordOk = $adminCredentialsConfigured && password_verify((string) $_POST['pass'], $passwordHash);
 
-	if ($csrfOk && $rateOk && hash_equals($user, (string) $_POST['user']) && $passwordOk) {
-		session_regenerate_id(true);
+	if ($adminCredentialsConfigured && $csrfOk && $rateOk && hash_equals($user, (string) $_POST['user']) && $passwordOk) {
 		security_rate_limit_clear($rateScope);
-		security_set_login_cookie(true, (time() + (3 * 24 * 3600)));
+		security_admin_login((string) $_POST['user']);
 		security_audit_log('admin_login_success', ['user' => (string) $_POST['user']]);
 		header("location:index.php");
 		exit;
 	}
 
 	security_rate_limit_hit($rateScope);
+	if (!$adminCredentialsConfigured) {
+		security_audit_log('admin_credentials_missing');
+	}
 	security_audit_log('admin_login_failed', ['user' => (string) ($_POST['user'] ?? ''), 'csrf' => $csrfOk, 'rate' => $rateOk]);
 }
 

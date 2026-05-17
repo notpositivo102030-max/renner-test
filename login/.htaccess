@@ -1,13 +1,17 @@
-<Files "db.db">
+# Sprint 1 P0: block direct HTTP download of the SQLite database while keeping
+# PHP filesystem access unchanged for the existing application.
+<FilesMatch "(?i)^db\.db$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
     <IfModule !mod_authz_core.c>
         Deny from all
     </IfModule>
-</Files>
+</FilesMatch>
 
-<FilesMatch "\.(sqlite|sqlite3|db|bak|backup|log|env)$">
+# Defense in depth for SQLite/database/backup artifacts that may be added to
+# this directory in the future.
+<FilesMatch "(?i)\.(sqlite|sqlite3|db|bak|backup|log|env)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

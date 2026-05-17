@@ -7,6 +7,11 @@ const SECURITY_CSRF_KEY = '_csrf_token';
 const SECURITY_RATE_LIMIT_WINDOW = 300;
 const SECURITY_RATE_LIMIT_MAX_ATTEMPTS = 8;
 const SECURITY_ENCRYPTION_PREFIX = 'enc:v1:';
+const SECURITY_ADMIN_AUTH_KEY = 'admin_authenticated';
+const SECURITY_ADMIN_USER_KEY = 'admin_user';
+const SECURITY_ADMIN_AUTHENTICATED_AT_KEY = 'admin_authenticated_at';
+const SECURITY_ADMIN_LAST_ACTIVITY_KEY = 'admin_last_activity';
+const SECURITY_ADMIN_TIMEOUT_DEFAULT = 1800;
 
 function security_sensitive_fields(): array
 {
@@ -129,6 +134,116 @@ function security_cookie_options(int $expires): array
 function security_set_login_cookie(bool $value, int $expires): void
 {
     setcookie('login', $value ? '1' : '', security_cookie_options($expires));
+}
+
+
+function security_admin_timeout_seconds(): int
+{
+    $timeout = filter_var(getenv('ADMIN_SESSION_TIMEOUT') ?: null, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1],
+    ]);
+
+    return is_int($timeout) ? $timeout : SECURITY_ADMIN_TIMEOUT_DEFAULT;
+}
+
+function security_admin_is_authenticated(): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    if (($_SESSION[SECURITY_ADMIN_AUTH_KEY] ?? false) !== true) {
+        return false;
+    }
+
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? '';
+    $lastActivity = (int) ($_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] ?? 0);
+    $now = time();
+
+    if (!is_string($user) || $user === '' || $lastActivity <= 0) {
+        security_admin_clear_session('invalid');
+        security_audit_log('admin_session_invalid');
+        return false;
+    }
+
+    if (($now - $lastActivity) > security_admin_timeout_seconds()) {
+        security_admin_clear_session('timeout');
+        security_audit_log('admin_session_timeout', ['user' => $user]);
+        return false;
+    }
+
+    $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] = $now;
+    return true;
+}
+
+function security_admin_login(string $user): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        security_start_session();
+    }
+
+    session_regenerate_id(true);
+    $_SESSION[SECURITY_ADMIN_AUTH_KEY] = true;
+    $_SESSION[SECURITY_ADMIN_USER_KEY] = $user;
+    $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY] = time();
+    $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] = time();
+    security_set_login_cookie(true, time() + security_admin_timeout_seconds());
+}
+
+function security_admin_clear_session(string $reason = 'logout'): void
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        unset(
+            $_SESSION[SECURITY_ADMIN_AUTH_KEY],
+            $_SESSION[SECURITY_ADMIN_USER_KEY],
+            $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY],
+            $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY]
+        );
+    }
+
+    security_set_login_cookie(false, time() - 3600);
+}
+
+function security_admin_logout(string $reason = 'logout'): void
+{
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? null;
+    security_audit_log('admin_logout', ['user' => is_string($user) ? $user : null, 'reason' => $reason]);
+    security_admin_clear_session($reason);
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', [
+                'expires' => time() - 3600,
+                'path' => $params['path'] ?? '/',
+                'domain' => $params['domain'] ?? '',
+                'secure' => security_is_https(),
+                'httponly' => true,
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ]);
+        }
+        session_destroy();
+    }
+}
+
+function security_admin_require(string $loginPath = 'login.php'): void
+{
+    if (security_admin_is_authenticated()) {
+        return;
+    }
+
+    security_audit_log('admin_access_denied', ['target' => $_SERVER['REQUEST_URI'] ?? null]);
+    if (!headers_sent()) {
+        header('Location: ' . $loginPath);
+    }
+    exit;
+}
+
+function security_admin_current_user(): ?string
+{
+    $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? null;
+    return is_string($user) && $user !== '' ? $user : null;
 }
 
 function security_h(mixed $value): string
@@ -392,6 +507,17 @@ function security_audit_log(string $event, array $context = []): void
     ];
 
     error_log('audit=' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+}
+
+function security_sqlite_path(): string
+{
+    $configuredPath = getenv('APP_DB_PATH');
+
+    if ($configuredPath !== false && trim($configuredPath) !== '') {
+        return $configuredPath;
+    }
+
+    return dirname(__DIR__) . '/login/db.db';
 }
 
 function security_pdo_sqlite(string $path): PDO
