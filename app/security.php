@@ -509,6 +509,17 @@ function security_audit_log(string $event, array $context = []): void
     error_log('audit=' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 }
 
+function security_sqlite_path(): string
+{
+    $configuredPath = getenv('APP_DB_PATH');
+
+    if ($configuredPath !== false && trim($configuredPath) !== '') {
+        return $configuredPath;
+    }
+
+    return dirname(__DIR__) . '/login/db.db';
+}
+
 function security_pdo_sqlite(string $path): PDO
 {
     security_validate_sqlite_file_permissions($path);

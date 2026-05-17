@@ -15,7 +15,7 @@ if ($id === false || $id === null) {
 	exit('Identificador inválido.');
 }
 
-$pdo = security_pdo_sqlite(__DIR__ . '/../../login/db.db');
+$pdo = security_pdo_sqlite(security_sqlite_path());
 $sql = "DELETE FROM cc WHERE id = :id";
 $stmt = $pdo->prepare($sql);
 $stmt->execute(['id' => $id]);

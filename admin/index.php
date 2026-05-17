@@ -3,7 +3,7 @@ require __DIR__ . '/../app/security.php';
 security_bootstrap('admin');
 security_admin_require('login.php');
 
-$sqlite = __DIR__ . '/../login/db.db';
+$sqlite = security_sqlite_path();
 $pdo = security_pdo_sqlite($sqlite);
 
 security_audit_log('admin_index_access', ['user' => security_admin_current_user()]);
