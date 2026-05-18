@@ -14,7 +14,7 @@ $senha = $_POST['senha'] ?? '';
          window.constants.GOOGLE_OPTIMIZE_CODE = 'GTM-W9SBWRL';
          window.constants.GOOGLE_TAG_MANAGER_CODE = 'GTM-N2FTFQ';
          window.constants.GOOGLE_ANALYTICS_CODE = 'UA-34448218-21';
-         window.constants.AUTHORIZATION_CANAL = 'Basic cmVubmVyLXNpdGU6c2l0ZQ==';
+         window.constants.AUTHORIZATION_CANAL = <?php echo json_encode((string) getenv('PUBLIC_AUTHORIZATION_CANAL')); ?>;
       </script>
       <!-- End Constantes -->
       <!-- Dynatrace -->

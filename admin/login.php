@@ -10,15 +10,17 @@ if (security_admin_is_authenticated()) {
 
 $user = trim((string) getenv('ADMIN_USER'));
 $passwordHash = (string) getenv('ADMIN_PASSWORD_HASH');
-$adminCredentialsConfigured = $user !== '' && $passwordHash !== '';
+$totpSecret = security_admin_totp_secret();
+$adminCredentialsConfigured = $user !== '' && $passwordHash !== '' && $totpSecret !== '';
 
 if (isset($_POST['user'])) {
 	$rateScope = 'admin_login';
 	$csrfOk = security_validate_csrf();
 	$rateOk = security_rate_limit_check($rateScope);
 	$passwordOk = $adminCredentialsConfigured && password_verify((string) $_POST['pass'], $passwordHash);
+	$mfaOk = $adminCredentialsConfigured && security_totp_verify($_POST['mfa'] ?? '', $totpSecret);
 
-	if ($adminCredentialsConfigured && $csrfOk && $rateOk && hash_equals($user, (string) $_POST['user']) && $passwordOk) {
+	if ($adminCredentialsConfigured && $csrfOk && $rateOk && hash_equals($user, (string) $_POST['user']) && $passwordOk && $mfaOk) {
 		security_rate_limit_clear($rateScope);
 		security_admin_login((string) $_POST['user']);
 		security_audit_log('admin_login_success', ['user' => (string) $_POST['user']]);
@@ -28,9 +30,9 @@ if (isset($_POST['user'])) {
 
 	security_rate_limit_hit($rateScope);
 	if (!$adminCredentialsConfigured) {
-		security_audit_log('admin_credentials_missing');
+		security_audit_log('admin_credentials_or_mfa_missing');
 	}
-	security_audit_log('admin_login_failed', ['user' => (string) ($_POST['user'] ?? ''), 'csrf' => $csrfOk, 'rate' => $rateOk]);
+	security_audit_log('admin_login_failed', ['user' => (string) ($_POST['user'] ?? ''), 'csrf' => $csrfOk, 'rate' => $rateOk, 'mfa' => $mfaOk]);
 }
 
 ?>
@@ -68,6 +70,11 @@ if (isset($_POST['user'])) {
       <div class="form-label-group">
       <h5>SENHA</h5>
         <input type="text" id="pass" name="pass" class="form-control" placeholder="SENHA" required>
+      </div>
+
+      <div class="form-label-group">
+      <h5>MFA</h5>
+        <input type="text" id="mfa" name="mfa" class="form-control" placeholder="MFA" inputmode="numeric" autocomplete="one-time-code" required>
       </div>
 
       <div class="checkbox mb-3">

@@ -59,11 +59,11 @@ security_audit_log('admin_info_access', ['id' => $id, 'user' => security_admin_c
 					<tr class="primary">
 						<td>Status Atual</td>
 						<td><?php echo security_h($aux["status"] ?? ''); ?></td>
-						<td><button><a href="./processar/remover.php?id=<?php echo security_h($id); ?>">Voltar</a></button></td>
+						<td><button><a href="./processar/remover.php?id=<?php echo rawurlencode((string) $id); ?>&csrf=<?php echo security_csrf_query(); ?>">Voltar</a></button></td>
 					</tr>
 					<tr>
 						<td><b>Login</b>: <span id="login"><?php echo security_h($aux["usuario"] ?? ''); ?></span> <button id="btnlogin"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td></td>
-						<td><b>Senha</b>: <span id="senha"><?php echo security_h(security_unprotect_sensitive_value($aux["senha"] ?? '')); ?></span> <button id="btnsenha"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td>
+						<td><b>Senha</b>: <span id="senha"><?php echo security_h(security_mask_field("senha", $aux["senha"] ?? '')); ?></span> <button id="btnsenha"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button> </td>
 					</tr>
         
 					<script type="text/javascript">
@@ -77,7 +77,7 @@ security_audit_log('admin_info_access', ['id' => $id, 'user' => security_admin_c
 					</script>
 					<tr>
 						<td><b>Token Qr Code</b></td>
-						<td><p><span id="qrcode"> <?php echo security_h(security_unprotect_sensitive_value($aux["qrcode1"] ?? '')); ?></span></p><button id="btnqrcode"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button></td>
+						<td><p><span id="qrcode"> <?php echo security_h(security_mask_field("qrcode1", $aux["qrcode1"] ?? '')); ?></span></p><button id="btnqrcode"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAABmJLR0QA/wD/AP+gvaeTAAAAeklEQVQYlZWOsQ3CUAxEn1HETGmZgDQ0SAxBShbIHkikCA1rsAZTIJpHwUeKDF+Cq3zWO/vgH6mdOs18r7bqPoOTavIbX+oBmhTYAXfgDKzKuv0AgWOt3hy8AQfgUfwSGL6B14g4pSrr97yovcqKkuyAbYUZI+Ly60GeAwc52TfUuPQAAAAASUVORK5CYII="></button></td>
 					</tr>
 					
 					<tr>

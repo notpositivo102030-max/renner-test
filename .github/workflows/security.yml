@@ -1,0 +1,28 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master, work, harden-legacy-security ]
+
+jobs:
+  php-lint-and-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - name: PHP lint
+        run: find . -name '*.php' -print | sort | xargs -n1 php -l
+      - name: Composer audit PHPMailer subtree
+        run: composer audit --working-dir=login/system/PHPMailer --no-interaction || true
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Secret scan patterns
+        run: |
+          ! rg -n "(AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AUTHORIZATION_CANAL = 'Basic|password\s*=\s*['\"][^'\"]+)" . -g '!composer.lock' -g '!vendor/**'
+      - name: Unsafe dynamic execution/query scan
+        run: |
+          ! rg -n "(shell_exec|passthru|system\s*\(|eval\s*\(|unserialize\s*\(\s*\$_|(mysqli_query|mysql_query|->query)\s*\([^;]*(\$_GET|\$_POST|\$_REQUEST))" . -g '*.php'
